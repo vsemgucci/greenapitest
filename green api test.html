@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GREEN-API — тестовое задание</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 20px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f8; color: #222;
+  }
+  .wrap {
+    max-width: 960px; margin: 0 auto;
+    display: grid; grid-template-columns: 320px 1fr; gap: 32px;
+  }
+  .left { display: flex; flex-direction: column; gap: 10px; }
+  .group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+  input, textarea {
+    width: 100%; padding: 10px 12px; font-size: 14px;
+    border: 1px solid #c9ced6; border-radius: 6px; background: #fff;
+  }
+  textarea { resize: vertical; min-height: 70px; font-family: inherit; }
+  input:focus, textarea:focus { outline: none; border-color: #1fa463; }
+  button {
+    padding: 12px; font-size: 14px; cursor: pointer;
+    border: 1px solid #c9ced6; border-radius: 6px; background: #fff;
+    transition: background .15s;
+  }
+  button:hover { background: #e9f7ef; border-color: #1fa463; }
+  button:disabled { opacity: .5; cursor: wait; }
+  small { color: #777; font-size: 12px; }
+  .right { display: flex; flex-direction: column; }
+  .right label { font-size: 16px; margin-bottom: 8px; }
+  #response {
+    flex: 1; min-height: 560px; width: 100%;
+    font-family: ui-monospace, Consolas, monospace; font-size: 13px;
+    background: #fff;
+  }
+  @media (max-width: 760px) {
+    .wrap { grid-template-columns: 1fr; }
+    #response { min-height: 300px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <div class="group">
+      <input id="apiUrl" value="https://api.green-api.com" placeholder="apiUrl">
+      <small>apiUrl — из личного кабинета (если там указан другой)</small>
+      <input id="idInstance" placeholder="idInstance">
+      <input id="apiToken" placeholder="ApiTokenInstance">
+    </div>
+
+    <div class="group">
+      <button data-method="getSettings">getSettings</button>
+      <button data-method="getStateInstance">getStateInstance</button>
+    </div>
+
+    <div class="group">
+      <input id="msgPhone" placeholder="77771234567">
+      <textarea id="msgText" placeholder="Hello World!"></textarea>
+      <button data-method="sendMessage">sendMessage</button>
+    </div>
+
+    <div class="group">
+      <input id="filePhone" placeholder="77771234567">
+      <input id="fileUrl" placeholder="https://my.site.com/img/horse.png">
+      <button data-method="sendFileByUrl">sendFileByUrl</button>
+    </div>
+  </div>
+
+  <div class="right">
+    <label for="response">Ответ:</label>
+    <textarea id="response" readonly></textarea>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const out = $("response");
+
+  function show(data) {
+    out.value = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  }
+
+  // Номер -> chatId: оставляем только цифры, добавляем @c.us
+  function toChatId(phone) {
+    const digits = phone.replace(/\D/g, "");
+    if (!digits) throw new Error("Укажите номер телефона");
+    return digits + "@c.us";
+  }
+
+  // Имя файла берём из ссылки (по расширению API определяет тип)
+  function fileNameFromUrl(url) {
+    try {
+      const name = new URL(url).pathname.split("/").pop();
+      return name || "file";
+    } catch {
+      throw new Error("Некорректная ссылка на файл");
+    }
+  }
+
+  function buildRequest(method) {
+    switch (method) {
+      case "getSettings":
+      case "getStateInstance":
+        return { httpMethod: "GET" };
+      case "sendMessage": {
+        const message = $("msgText").value.trim();
+        if (!message) throw new Error("Введите текст сообщения");
+        return { httpMethod: "POST", body: { chatId: toChatId($("msgPhone").value), message } };
+      }
+      case "sendFileByUrl": {
+        const urlFile = $("fileUrl").value.trim();
+        if (!urlFile) throw new Error("Укажите ссылку на файл");
+        return {
+          httpMethod: "POST",
+          body: { chatId: toChatId($("filePhone").value), urlFile, fileName: fileNameFromUrl(urlFile) }
+        };
+      }
+    }
+  }
+
+  async function callMethod(method, btn) {
+    const apiUrl = $("apiUrl").value.trim().replace(/\/+$/, "");
+    const id = $("idInstance").value.trim();
+    const token = $("apiToken").value.trim();
+
+    try {
+      if (!id || !token) throw new Error("Заполните idInstance и ApiTokenInstance");
+      const req = buildRequest(method);
+      const url = `${apiUrl}/waInstance${id}/${method}/${token}`;
+
+      btn.disabled = true;
+      show("Загрузка...");
+
+      const res = await fetch(url, {
+        method: req.httpMethod,
+        headers: req.body ? { "Content-Type": "application/json" } : undefined,
+        body: req.body ? JSON.stringify(req.body) : undefined
+      });
+
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+
+      if (!res.ok) {
+        show({ error: `HTTP ${res.status}`, response: data });
+      } else {
+        show(data);
+      }
+    } catch (e) {
+      show({ error: e.message });
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.querySelectorAll("button[data-method]").forEach((btn) => {
+    btn.addEventListener("click", () => callMethod(btn.dataset.method, btn));
+  });
+</script>
+</body>
+</html>
